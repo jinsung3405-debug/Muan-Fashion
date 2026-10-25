@@ -16,9 +16,10 @@ import {
   QrCode,
   Globe2,
   Lock,
-  UserCheck
+  UserCheck,
+  Users
 } from 'lucide-react';
-import { AppConfig, StudentAnswers } from '../types';
+import { AppConfig, StudentAnswers, StudentSubmissionRecord } from '../types';
 import { 
   PERSONALITY_TRAITS, 
   MISSION1_ITEMS, 
@@ -33,6 +34,8 @@ interface FashionAppProps {
   onOpenGuide: () => void;
   onOpenSettings: () => void;
   onOpenShare: () => void;
+  onOpenClassData?: () => void;
+  onSaveSubmission?: (record: StudentSubmissionRecord) => void;
 }
 
 export const FashionApp: React.FC<FashionAppProps> = ({
@@ -40,13 +43,19 @@ export const FashionApp: React.FC<FashionAppProps> = ({
   onOpenGuide,
   onOpenSettings,
   onOpenShare,
+  onOpenClassData,
+  onSaveSubmission,
 }) => {
   // Current Slide (1 to 14)
   const [currentSlide, setCurrentSlide] = useState<number>(1);
 
-  // Student Identity
-  const [studentGrade, setStudentGrade] = useState<string>(''); // 학년/반/번호
-  const [studentName, setStudentName] = useState<string>(''); // 이름
+  // Student Identity: Grade, Class, Number, Name
+  const [gradeLevel, setGradeLevel] = useState<string>('1학년');
+  const [classNum, setClassNum] = useState<string>('1반');
+  const [customClass, setCustomClass] = useState<string>('');
+  const [studentNumber, setStudentNumber] = useState<string>('');
+  const [studentName, setStudentName] = useState<string>('');
+
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<{
@@ -164,7 +173,6 @@ export const FashionApp: React.FC<FashionAppProps> = ({
   const handleCheckQuiz = (quizItem: typeof MISSION2_QUIZZES[0], selectedCountry: string) => {
     const isCorrect = selectedCountry === quizItem.country;
 
-    // Trigger celebratory confetti if correct
     if (isCorrect) {
       confetti({
         particleCount: 50,
@@ -174,7 +182,6 @@ export const FashionApp: React.FC<FashionAppProps> = ({
       });
     }
 
-    // Save quiz result
     setAnswers((prev) => ({
       ...prev,
       mission2: {
@@ -186,7 +193,6 @@ export const FashionApp: React.FC<FashionAppProps> = ({
       },
     }));
 
-    // Open Modal
     setQuizModal({
       isOpen: true,
       isCorrect,
@@ -255,7 +261,10 @@ export const FashionApp: React.FC<FashionAppProps> = ({
   const bodyDiagnosis = diagnoseBodyType(answers.body);
   const m2Score = Object.values(answers.mission2).filter((r) => r.isCorrect).length;
 
-  // Submit results to Google Sheets
+  const effectiveClass = classNum === 'CUSTOM' ? (customClass.trim() || '미지정반') : classNum;
+  const fullClassLabel = `${gradeLevel} ${effectiveClass}`;
+
+  // Submit results to Google Sheets with multi-class separation
   const handleSubmitToGoogleSheet = async () => {
     if (!studentName.trim()) {
       alert('이름을 입력해 주세요!');
@@ -264,9 +273,14 @@ export const FashionApp: React.FC<FashionAppProps> = ({
 
     setIsSubmitting(true);
 
-    const payload = {
-      studentGrade: studentGrade.trim() || '미입력',
+    const nowFormatted = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+    const submissionData = {
+      gradeLevel,
+      classNum: effectiveClass,
+      studentNumber: studentNumber.trim() ? (studentNumber.includes('번') ? studentNumber.trim() : `${studentNumber.trim()}번`) : '',
       studentName: studentName.trim(),
+      fullClassLabel,
       m1_1: `성격: ${answers.mission1[1]?.traits.join(', ') || '-'} / 직업: ${answers.mission1[1]?.job || '-'}`,
       m1_2: `성격: ${answers.mission1[2]?.traits.join(', ') || '-'} / 직업: ${answers.mission1[2]?.job || '-'}`,
       m1_3: `성격: ${answers.mission1[3]?.traits.join(', ') || '-'} / 직업: ${answers.mission1[3]?.job || '-'}`,
@@ -282,20 +296,62 @@ export const FashionApp: React.FC<FashionAppProps> = ({
       body3: answers.body.body3 || '-',
     };
 
-    if (config.googleSheetWebhookUrl?.trim()) {
+    const webhookUrl = config.googleSheetWebhookUrl?.trim();
+
+    // 1. Save locally for teacher class backup
+    const localRecord: StudentSubmissionRecord = {
+      id: `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: nowFormatted,
+      gradeLevel: submissionData.gradeLevel,
+      classNum: submissionData.classNum,
+      studentNumber: submissionData.studentNumber,
+      studentName: submissionData.studentName,
+      fullClassLabel: submissionData.fullClassLabel,
+      m1_1: submissionData.m1_1,
+      m1_2: submissionData.m1_2,
+      m1_3: submissionData.m1_3,
+      m1_4: submissionData.m1_4,
+      m2Score: submissionData.m2_score,
+      m2_1: submissionData.m2_1,
+      m2_2: submissionData.m2_2,
+      m2_3: submissionData.m2_3,
+      m2_4: submissionData.m2_4,
+      bodyDiagnosis: submissionData.bodyDiagnosis,
+      body1: submissionData.body1,
+      body2: submissionData.body2,
+      body3: submissionData.body3,
+      sentToGoogleSheet: !!webhookUrl,
+    };
+
+    if (onSaveSubmission) {
+      onSaveSubmission(localRecord);
+    }
+
+    // 2. Dual transmission to Google Apps Script (POST + GET Fallback)
+    if (webhookUrl) {
       try {
-        await fetch(config.googleSheetWebhookUrl.trim(), {
+        // Method A: POST via text/plain (no preflight, no-cors)
+        const postPromise = fetch(webhookUrl, {
           method: 'POST',
           mode: 'no-cors',
           headers: {
             'Content-Type': 'text/plain',
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(submissionData),
         });
 
+        // Method B: GET with URL encoded data parameter (bulletproof fallback)
+        const getUrl = `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}action=submit&data=${encodeURIComponent(JSON.stringify(submissionData))}`;
+        const getPromise = fetch(getUrl, {
+          method: 'GET',
+          mode: 'no-cors',
+        });
+
+        await Promise.race([postPromise, getPromise]);
+
         confetti({
-          particleCount: 80,
-          spread: 70,
+          particleCount: 90,
+          spread: 75,
           origin: { y: 0.5 },
           colors: ['#f8b3c3', '#34d399', '#60a5fa', '#fbbf24'],
         });
@@ -303,27 +359,28 @@ export const FashionApp: React.FC<FashionAppProps> = ({
         setIsSubmitted(true);
         setSubmissionFeedback({
           show: true,
-          title: '🎉 제출 완료!',
-          message: `${studentName} 학생의 응답이 써비쌤의 구글 스프레드시트로 전송되었습니다! 수고하셨습니다.`,
+          title: '🎉 제출 성공!',
+          message: `[${fullClassLabel} ${studentNumber} ${studentName}] 학생의 응답이 제출되었습니다!\n\n써비쌤의 구글 스프레드시트 [${effectiveClass}] 탭과 [전체통합] 탭에 실시간으로 자동 누적되었습니다.`,
           isSuccess: true,
         });
       } catch (err: any) {
+        // Even if network blips, local backup recorded
+        setIsSubmitted(true);
         setSubmissionFeedback({
           show: true,
-          title: '전송 안내',
-          message: '구글 시트 전송 중 일시적인 네트워크 오류가 발생했습니다. 아래 결과 복사하기 버튼을 이용해 제출할 수도 있습니다.',
-          isSuccess: false,
+          title: '제출 완료 (안내)',
+          message: `[${fullClassLabel} ${studentName}] 학생의 응답이 브라우저에 안전하게 저장되었습니다.\n\n구글 시트에 반영되지 않았다면 [선생님 설정] > [Apps Script 코드 복사]로 '새 버전' 배포가 완료되었는지 확인해 주세요!`,
+          isSuccess: true,
         });
       } finally {
         setIsSubmitting(false);
       }
     } else {
-      // No webhook URL configured yet
       setIsSubmitting(false);
       setSubmissionFeedback({
         show: true,
-        title: '구글 시트 연동 설정 안내',
-        message: '아직 써비쌤의 구글 시트 Webhook URL이 등록되지 않았습니다. 상단 [선생님 설정] 버튼을 눌러 구글 스프레드시트 배포 URL을 입력해두시면 학생들의 응답이 실시간 자동 저장됩니다!',
+        title: '구글 시트 연동 안내',
+        message: '구글 시트 주소가 설정되지 않아 로컬 목록에만 보관되었습니다. 상단 [시트 설정]에서 써비쌤의 Apps Script 웹앱 링크를 등록해 주세요.',
         isSuccess: false,
       });
     }
@@ -332,20 +389,20 @@ export const FashionApp: React.FC<FashionAppProps> = ({
   // Copy Summary to Clipboard
   const handleCopySummary = () => {
     const text = `[${config.appTitle} 결과 보고서]
-학생: ${studentGrade ? `${studentGrade} ` : ''}${studentName || '익명'}
+학생: ${fullClassLabel} ${studentNumber} ${studentName || '익명'}
 선생님: ${config.teacherBrand}
 
 [미션 1] 옷만 보고 맞히기
-- 1번: 성격(${answers.mission1[1]?.traits.join(', ') || '미선택'}) / 직업(${answers.mission1[1]?.job || '미입력'})
-- 2번: 성격(${answers.mission1[2]?.traits.join(', ') || '미선택'}) / 직업(${answers.mission1[2]?.job || '미입력'})
-- 3번: 성격(${answers.mission1[3]?.traits.join(', ') || '미선택'}) / 직업(${answers.mission1[3]?.job || '미입력'})
-- 4번: 성격(${answers.mission1[4]?.traits.join(', ') || '미선택'}) / 직업(${answers.mission1[4]?.job || '미입력'})
+- 1번: ${answers.mission1[1]?.traits.join(', ') || '미선택'} / 직업: ${answers.mission1[1]?.job || '미입력'}
+- 2번: ${answers.mission1[2]?.traits.join(', ') || '미선택'} / 직업: ${answers.mission1[2]?.job || '미입력'}
+- 3번: ${answers.mission1[3]?.traits.join(', ') || '미선택'} / 직업: ${answers.mission1[3]?.job || '미입력'}
+- 4번: ${answers.mission1[4]?.traits.join(', ') || '미선택'} / 직업: ${answers.mission1[4]?.job || '미입력'}
 
 [미션 2] 전통의상 맞히기 (점수: ${m2Score}/4)
-- 1번(인도): ${answers.mission2[1]?.isCorrect ? '정답' : '오답'} (선택: ${answers.mission2[1]?.selected || '미응답'})
-- 2번(멕시코): ${answers.mission2[2]?.isCorrect ? '정답' : '오답'} (선택: ${answers.mission2[2]?.selected || '미응답'})
-- 3번(베트남): ${answers.mission2[3]?.isCorrect ? '정답' : '오답'} (선택: ${answers.mission2[3]?.selected || '미응답'})
-- 4번(일본): ${answers.mission2[4]?.isCorrect ? '정답' : '오답'} (선택: ${answers.mission2[4]?.selected || '미응답'})
+- 1번(인도): ${answers.mission2[1]?.isCorrect ? '정답' : '오답'}
+- 2번(멕시코): ${answers.mission2[2]?.isCorrect ? '정답' : '오답'}
+- 3번(베트남): ${answers.mission2[3]?.isCorrect ? '정답' : '오답'}
+- 4번(일본): ${answers.mission2[4]?.isCorrect ? '정답' : '오답'}
 
 [미션 3] 나의 체형 진단 & 코디 팁
 - 체형 유형: ${bodyDiagnosis.bodyTypeTitle}
@@ -374,30 +431,33 @@ export const FashionApp: React.FC<FashionAppProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {onOpenClassData && (
+            <button
+              onClick={onOpenClassData}
+              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-2.5 py-1 rounded-full border border-indigo-400 shadow-sm transition-all text-[11px]"
+              title="각 반별 제출 데이터 모아보기"
+            >
+              <Users className="w-3.5 h-3.5" /> 반별 데이터
+            </button>
+          )}
           <button
             onClick={onOpenShare}
             className="flex items-center gap-1 bg-pink-500 hover:bg-pink-400 text-white font-bold px-2.5 py-1 rounded-full border border-pink-400 shadow-sm transition-all text-[11px]"
             title="학생들에게 QR 코드 및 링크 공유"
           >
-            <QrCode className="w-3.5 h-3.5" /> 공유하기
-          </button>
-          <button
-            onClick={onOpenGuide}
-            className="flex items-center gap-1 bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold px-2.5 py-1 rounded-full border border-amber-600 shadow-sm transition-all text-[11px]"
-          >
-            <HelpCircle className="w-3.5 h-3.5" /> 가이드
+            <QrCode className="w-3.5 h-3.5" /> 공유
           </button>
           <button
             onClick={onOpenSettings}
             className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-full border border-emerald-400 transition-all text-[11px] font-bold"
-            title="구글 시트 연동 및 선생님 설정"
+            title="구글 시트 연동 설정"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" /> 시트 설정
           </button>
         </div>
       </div>
 
-      {/* Main App Container (Faithful to Original 480px Mobile Canvas) */}
+      {/* Main App Container */}
       <div 
         id="app-canvas"
         className="w-full max-w-[480px] h-[820px] sm:h-[840px] bg-[#fdebed] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-[3.5px] border-stone-900 relative overflow-hidden flex flex-col font-gowun text-stone-900"
@@ -909,27 +969,67 @@ export const FashionApp: React.FC<FashionAppProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold font-jua text-stone-800 flex items-center gap-1">
                     <UserCheck className="w-4 h-4 text-pink-600" />
-                    <span>학생 인적 사항 (구글 시트 기록용)</span>
+                    <span>학생 인적 사항 (반별 시트 자동 분리)</span>
                   </span>
-                  {config.googleSheetWebhookUrl ? (
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold border border-emerald-300">
-                      시트 연동 ON
-                    </span>
-                  ) : (
-                    <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold border border-amber-300">
-                      시트 미등록
-                    </span>
-                  )}
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold border border-emerald-300">
+                    반별 시트 누적
+                  </span>
                 </div>
 
+                {/* Grade and Class Dropdowns */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[11px] font-bold text-stone-600 block mb-0.5">학년/반/번호</label>
+                    <label className="text-[11px] font-bold text-stone-600 block mb-0.5">학년 선택</label>
+                    <select
+                      value={gradeLevel}
+                      onChange={(e) => setGradeLevel(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-pink-500 bg-stone-50 font-bold"
+                    >
+                      <option value="1학년">1학년</option>
+                      <option value="2학년">2학년</option>
+                      <option value="3학년">3학년</option>
+                      <option value="기타">기타</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-600 block mb-0.5">반 선택</label>
+                    <select
+                      value={classNum}
+                      onChange={(e) => setClassNum(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-pink-500 bg-stone-50 font-bold"
+                    >
+                      {['1반', '2반', '3반', '4반', '5반', '6반', '7반', '8반', '9반', '10반', 'CUSTOM'].map((c) => (
+                        <option key={c} value={c}>
+                          {c === 'CUSTOM' ? '직접 입력' : c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {classNum === 'CUSTOM' && (
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-600 block mb-0.5">반 직접 입력</label>
                     <input
                       type="text"
-                      value={studentGrade}
-                      onChange={(e) => setStudentGrade(e.target.value)}
-                      placeholder="예: 2-3 15번"
+                      value={customClass}
+                      onChange={(e) => setCustomClass(e.target.value)}
+                      placeholder="예: 11반 또는 동아리반"
+                      className="w-full px-2.5 py-1 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-pink-500 bg-stone-50"
+                    />
+                  </div>
+                )}
+
+                {/* Number and Name */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-stone-600 block mb-0.5">번호</label>
+                    <input
+                      type="text"
+                      value={studentNumber}
+                      onChange={(e) => setStudentNumber(e.target.value)}
+                      placeholder="예: 15번"
                       className="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-pink-500 bg-stone-50"
                     />
                   </div>
@@ -943,6 +1043,10 @@ export const FashionApp: React.FC<FashionAppProps> = ({
                       className="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-pink-500 bg-stone-50 font-bold"
                     />
                   </div>
+                </div>
+
+                <div className="bg-pink-50 p-1.5 rounded-lg text-[10px] text-pink-800 flex items-center justify-between">
+                  <span>📌 저장될 시트 위치: <strong>[{effectiveClass}]</strong> 탭 & <strong>[전체통합]</strong> 탭</span>
                 </div>
 
                 {/* Big Submit Button */}
@@ -974,7 +1078,7 @@ export const FashionApp: React.FC<FashionAppProps> = ({
               </div>
 
               {/* Scrollable Summary Cards */}
-              <div className="space-y-2.5 overflow-y-auto max-h-[380px] sm:max-h-[420px] pr-1">
+              <div className="space-y-2.5 overflow-y-auto max-h-[340px] sm:max-h-[380px] pr-1">
                 
                 {/* Mission 1 Card */}
                 <div className="bg-white border-2 border-stone-900 rounded-xl p-3 shadow-xs">
@@ -1177,13 +1281,13 @@ export const FashionApp: React.FC<FashionAppProps> = ({
               {submissionFeedback.title}
             </h3>
 
-            <p className="text-xs text-stone-600 leading-relaxed mb-4">
+            <p className="text-xs text-stone-600 leading-relaxed mb-4 whitespace-pre-line text-left bg-stone-50 p-3 rounded-xl border border-stone-200">
               {submissionFeedback.message}
             </p>
 
             <button
               onClick={() => setSubmissionFeedback((prev) => ({ ...prev, show: false }))}
-              className="font-jua text-sm bg-stone-900 hover:bg-stone-800 text-white rounded-xl px-6 py-2 transition-transform active:scale-95"
+              className="font-jua text-sm bg-stone-900 hover:bg-stone-800 text-white rounded-xl px-6 py-2 transition-transform active:scale-95 cursor-pointer"
             >
               확인
             </button>

@@ -11,7 +11,9 @@ import {
   ExternalLink,
   HelpCircle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Layers,
+  ArrowRight
 } from 'lucide-react';
 import { AppConfig } from '../types';
 import { DEFAULT_CONFIG } from '../data/fashionData';
@@ -34,9 +36,12 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
   const [appTitle, setAppTitle] = useState(config.appTitle);
   const [subTitle, setSubTitle] = useState(config.subTitle);
   const [teacherBrand, setTeacherBrand] = useState(config.teacherBrand || 'made by 써비쌤');
-  const [webhookUrl, setWebhookUrl] = useState(config.googleSheetWebhookUrl || '');
+  const [webhookUrl, setWebhookUrl] = useState(
+    config.googleSheetWebhookUrl || DEFAULT_CONFIG.googleSheetWebhookUrl || ''
+  );
   
   const [copiedCode, setCopiedCode] = useState(false);
+  const [testClass, setTestClass] = useState('1반');
   const [testStatus, setTestStatus] = useState<{ loading: boolean; success?: boolean; message?: string } | null>(null);
 
   if (!isOpen) return null;
@@ -56,7 +61,7 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
     setAppTitle(DEFAULT_CONFIG.appTitle);
     setSubTitle(DEFAULT_CONFIG.subTitle);
     setTeacherBrand('made by 써비쌤');
-    setWebhookUrl('');
+    setWebhookUrl(DEFAULT_CONFIG.googleSheetWebhookUrl || '');
   };
 
   const handleCopyScript = () => {
@@ -65,7 +70,7 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // Test send to the Google Sheet Webhook URL
+  // Test send to the Google Sheet Webhook URL with class separation
   const handleTestWebhook = async () => {
     if (!webhookUrl.trim()) {
       alert('먼저 구글 앱스 스크립트 웹 앱 URL을 입력해 주세요!');
@@ -76,8 +81,11 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
 
     try {
       const testData = {
-        studentGrade: '1학년 1반 1번',
+        gradeLevel: '1학년',
+        classNum: testClass,
+        studentNumber: '1번',
         studentName: '테스트 학생',
+        fullClassLabel: `1학년 ${testClass}`,
         m1_1: '발랄함, 유쾌함 / 패션 디자이너',
         m1_2: '조용함, 섬세함 / 미술 작가',
         m1_3: '우아함, 부드러움 / 선생님',
@@ -93,8 +101,8 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
         body3: '배꼽 가까이',
       };
 
-      // Send via POST (mode: no-cors is standard for Google Apps Script Web Apps from browser)
-      await fetch(webhookUrl.trim(), {
+      // Dual Send (POST + GET query fallback)
+      const postPromise = fetch(webhookUrl.trim(), {
         method: 'POST',
         mode: 'no-cors',
         headers: {
@@ -103,16 +111,24 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
         body: JSON.stringify(testData),
       });
 
+      const getUrl = `${webhookUrl.trim()}${webhookUrl.includes('?') ? '&' : '?'}action=submit&data=${encodeURIComponent(JSON.stringify(testData))}`;
+      const getPromise = fetch(getUrl, {
+        method: 'GET',
+        mode: 'no-cors',
+      });
+
+      await Promise.race([postPromise, getPromise]);
+
       setTestStatus({
         loading: false,
         success: true,
-        message: '테스트 데이터가 전송되었습니다! 구글 스프레드시트에 새 행이 추가되었는지 확인해 보세요.',
+        message: `테스트 데이터가 [${testClass}]으로 전송되었습니다!\n\n구글 스프레드시트를 열어 [${testClass}] 탭과 [전체통합] 탭이 생겼는지 확인해 보세요!`,
       });
     } catch (err: any) {
       setTestStatus({
         loading: false,
         success: false,
-        message: '전송 중 오류가 발생했습니다: ' + (err.message || String(err)),
+        message: '전송 중 네트워크 오류: ' + (err.message || String(err)),
       });
     }
   };
@@ -124,12 +140,12 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
         {/* Header */}
         <div className="bg-emerald-100 border-b-2 border-stone-800 p-4 sm:p-5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500 border border-stone-900 flex items-center justify-center text-white shadow-xs">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 border border-stone-900 flex items-center justify-center text-white shadow-xs">
               <FileSpreadsheet className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="font-jua text-lg text-stone-900">구글 시트 연동 & 선생님 설정</h3>
-              <p className="text-xs text-stone-600">학생 응답 실시간 수집 및 브랜딩 설정</p>
+              <h3 className="font-jua text-lg text-stone-900">각 반별 구글 시트 연동 & 설정</h3>
+              <p className="text-xs text-stone-600">반별(1반, 2반...) 자동 탭 분리 누적 및 해결 가이드</p>
             </div>
           </div>
           <button
@@ -151,7 +167,7 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
                 : 'text-stone-500 hover:text-stone-900'
             }`}
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" /> 1. 구글 시트 실시간 연동 (핵심)
+            <FileSpreadsheet className="w-3.5 h-3.5" /> 1. 반별 시트 연동 (해결 가이드)
           </button>
 
           <button
@@ -173,47 +189,60 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
           {activeTab === 'sheet' && (
             <div className="space-y-4">
               
-              {/* Info banner */}
-              <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 text-xs text-stone-700 leading-relaxed space-y-2">
-                <div className="font-bold text-emerald-950 font-jua text-sm flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span>학생들이 퀴즈를 풀면 선생님 구글 시트에 바로 기록됩니다!</span>
+              {/* Critical Root Cause Explanation */}
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-xs text-stone-800 leading-relaxed space-y-2">
+                <div className="font-bold text-amber-950 font-jua text-sm flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>데이터가 시트에 누적되지 않았던 이유 & 해결법 (필독!)</span>
                 </div>
-                <p>
-                  아래 <strong>30초 가이드</strong>대로 구글 시트에 스크립트를 붙여넣고 배포 URL을 입력해 두시면, 
-                  학생들이 마지막 화면에서 <strong>[선생님께 제출하기]</strong>를 누르는 즉시 시트에 학생별 이름, 성격 추론, 퀴즈 정답, 체형 분석 결과가 자동으로 한 행씩 쌓입니다.
-                </p>
+                <div className="text-[12px] space-y-1 text-stone-700">
+                  <p>
+                    <strong>① 권한 미승인:</strong> 스프레드시트에 쓰기 권한을 주려면 Apps Script 편집기 상단에서 <code>testSave</code> 함수를 한 번 <strong>[▷ 실행]</strong>하고 <strong>[권한 검토] → [허용]</strong>을 눌러야 합니다.
+                  </p>
+                  <p>
+                    <strong>② '새 버전' 미배포:</strong> Apps Script는 코드를 수정한 후 반드시 <strong>[배포 관리] → [수정(연필)] → [새 버전]</strong>을 선택하여 재배포해야 새 코드가 웹 앱에 반영됩니다.
+                  </p>
+                </div>
               </div>
 
-              {/* Webhook Input Field */}
+              {/* Webhook URL Input Field */}
               <div>
                 <label className="block text-xs font-bold text-stone-800 mb-1 font-jua flex items-center justify-between">
                   <span>선생님의 구글 앱스 스크립트 웹 앱 URL</span>
-                  <span className="text-[11px] text-stone-500 font-normal">https://script.google.com/macros/s/.../exec</span>
+                  <span className="text-[11px] text-emerald-700 font-bold">● 현재 써비쌤 링크 적용됨</span>
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="url"
                     value={webhookUrl}
                     onChange={(e) => setWebhookUrl(e.target.value)}
-                    placeholder="https://script.google.com/macros/s/AKfycby.../exec"
+                    placeholder="https://script.google.com/macros/s/.../exec"
                     className="flex-1 px-3 py-2 text-xs border-2 border-stone-300 rounded-xl focus:border-emerald-600 focus:outline-none font-mono"
                   />
+                  <select
+                    value={testClass}
+                    onChange={(e) => setTestClass(e.target.value)}
+                    className="px-2 py-2 text-xs border-2 border-stone-300 rounded-xl font-bold bg-stone-50"
+                  >
+                    {['1반', '2반', '3반', '4반', '5반'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     onClick={handleTestWebhook}
                     disabled={testStatus?.loading}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-stone-300 text-white rounded-xl text-xs font-jua font-bold shrink-0 flex items-center gap-1 shadow-sm transition-transform active:scale-95"
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-stone-300 text-white rounded-xl text-xs font-jua font-bold shrink-0 flex items-center gap-1 shadow-sm transition-transform active:scale-95 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>{testStatus?.loading ? '전송 중...' : '연동 테스트'}</span>
+                    <span>{testStatus?.loading ? '전송 중...' : '테스트 전송'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Test Status feedback */}
+              {/* Test Status Feedback */}
               {testStatus && (
-                <div className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                <div className={`p-3 rounded-xl border text-xs flex items-start gap-2 whitespace-pre-line ${
                   testStatus.success 
                     ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
                     : 'bg-red-50 border-red-300 text-red-900'
@@ -223,50 +252,39 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
                 </div>
               )}
 
-              {/* Step-by-Step Instructions */}
+              {/* 30-Second Fix Checklist */}
               <div className="bg-stone-50 border-2 border-stone-300 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="font-jua text-sm text-stone-900 flex items-center gap-1.5">
-                    <span>⚡ 1분 만에 구글 시트 연동 URL 만드는 법</span>
+                    <Layers className="w-4 h-4 text-emerald-600" />
+                    <span>반별 자동 분리 스크립트 적용 순서 (3단계)</span>
                   </h4>
                   <button
                     type="button"
                     onClick={handleCopyScript}
-                    className="flex items-center gap-1 px-3 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 rounded-lg text-xs font-jua font-bold transition-colors shadow-xs"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-stone-950 rounded-lg text-xs font-jua font-bold transition-colors shadow-xs cursor-pointer"
                   >
                     {copiedCode ? <Check className="w-3.5 h-3.5 text-stone-900" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedCode ? '복사 완료!' : '스크립트 코드 복사'}
+                    {copiedCode ? '복사 완료!' : '새 스크립트 코드 복사'}
                   </button>
                 </div>
 
-                <ol className="text-xs text-stone-600 space-y-2 list-decimal pl-4 leading-relaxed">
+                <ol className="text-xs text-stone-700 space-y-2 list-decimal pl-4 leading-relaxed">
                   <li>
-                    <a href="https://sheets.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline font-bold inline-flex items-center gap-0.5">
-                      구글 스프레드시트 <ExternalLink className="w-3 h-3" />
-                    </a>
-                    를 새로 하나 만듭니다 (예: <code>패션수업_학생응답</code>).
+                    구글 시트의 <strong>[확장 프로그램] → [Apps Script]</strong>를 열고, 우측 상단의 <strong>[새 스크립트 코드 복사]</strong> 버튼을 눌러 복사한 코드를 <strong>전부 덮어씌웁니다</strong>.
                   </li>
                   <li>
-                    시트 상단 메뉴 <strong>[확장 프로그램] → [Apps Script]</strong>를 클릭합니다.
+                    상단 함수 선택창에서 <span className="bg-amber-100 text-amber-900 px-1 py-0.5 rounded font-bold font-mono">testSave</span>를 선택하고 <strong>[▷ 실행]</strong> 버튼을 누릅니다.<br />
+                    → <span className="text-emerald-700 font-bold">'권한 검토' → '고급' → '안전하지 않음으로 이동' → '허용'</span>을 클릭하여 구글 시트 접근을 승인합니다. (시트에 [1반], [전체통합] 탭이 즉시 생성됩니다!)
                   </li>
                   <li>
-                    기존 내용을 지우고, 우측 상단 <strong>[스크립트 코드 복사]</strong> 버튼을 눌러 복사한 코드를 그대로 붙여넣습니다 (Ctrl+V).
-                  </li>
-                  <li>
-                    상단 <strong>[저장]</strong> 아이콘(디스켓) 클릭 후, 우측 상단 <strong>[배포] → [새 배포]</strong>를 클릭합니다.
-                  </li>
-                  <li>
-                    톱니바퀴에서 <strong>[웹 앱]</strong>을 선택하고:
-                    <ul className="list-disc pl-4 mt-1 text-stone-500 space-y-0.5">
-                      <li>설명: <code>학생 응답 수집</code></li>
-                      <li>다음 사용자로 실행: <code>나(내 계정)</code></li>
-                      <li>액세스 권한: <strong className="text-emerald-700 underline">모든 사용자(Anyone)</strong> (학생들이 로그인 없이 제출 가능)</li>
-                    </ul>
-                  </li>
-                  <li>
-                    <strong>[배포]</strong> 완료 시 생성되는 <code>https://script.google.com/macros/s/.../exec</code> 주소를 복사해 위의 입력창에 붙여넣고 [적용하기]를 누르면 끝입니다!
+                    우측 상단 <strong>[배포] → [배포 관리]</strong>를 누른 뒤, 연필 아이콘(수정)을 누르고 <strong>버전: [새 버전]</strong>을 선택한 후 <strong>[배포]</strong>를 클릭하면 끝입니다!
                   </li>
                 </ol>
+
+                <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl text-[11px] text-emerald-900">
+                  🎉 이제 학생들이 1반, 2반, 3반... 중 자기 반을 선택하여 제출하면, <strong>해당 반 탭에만 차곡차곡 누적</strong>되고 <strong>[전체통합] 탭에도 한 번 더 자동 기록</strong>됩니다!
+                </div>
               </div>
 
             </div>
@@ -346,7 +364,7 @@ export const TeacherSettingsModal: React.FC<TeacherSettingsModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="flex items-center gap-1 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-jua font-bold shadow-md transition-transform active:scale-95"
+                className="flex items-center gap-1 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-jua font-bold shadow-md transition-transform active:scale-95 cursor-pointer"
               >
                 <Check className="w-4 h-4" /> 설정 저장하기
               </button>

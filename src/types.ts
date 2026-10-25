@@ -42,18 +42,29 @@ export interface AppConfig {
   appTitle: string;
   subTitle: string;
   teacherBrand: string;
-  googleSheetWebhookUrl?: string; // Google Apps Script doPost URL for sheets
+  googleSheetWebhookUrl?: string; // Google Apps Script doPost/doGet URL
 }
 
 export interface StudentSubmissionRecord {
   id: string;
   timestamp: string;
-  studentGrade: string; // 학년/반/번호
-  studentName: string;
-  m1Results: string;
+  gradeLevel: string; // 학년 (예: 1학년, 2학년)
+  classNum: string;   // 반 (예: 1반, 2반...)
+  studentNumber: string; // 번호 (예: 15번)
+  studentName: string;   // 이름
+  fullClassLabel: string; // 예: 2학년 3반
+  m1_1: string;
+  m1_2: string;
+  m1_3: string;
+  m1_4: string;
   m2Score: number;
-  m2Results: string;
-  bodyTypeDiagnosis: string;
-  bodyAnswers: string;
+  m2_1: string;
+  m2_2: string;
+  m2_3: string;
+  m2_4: string;
+  bodyDiagnosis: string;
+  body1: string;
+  body2: string;
+  body3: string;
   sentToGoogleSheet: boolean;
 }

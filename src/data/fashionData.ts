@@ -4,7 +4,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   appTitle: '패션, 쉽지?',
   subTitle: '패션 테러리스트를 구해라',
   teacherBrand: 'made by 써비쌤',
-  googleSheetWebhookUrl: '',
+  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbzEq5EqhO9RXusFDObvGBatH32GvlB40s2n5uLx8RPwYFjOYV-mJfzZrcFUckVM3zLrZQ/exec',
 };
 
 export const PERSONALITY_TRAITS = [

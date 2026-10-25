@@ -14,7 +14,7 @@ import {
   HelpCircle,
   Lightbulb
 } from 'lucide-react';
-import { CODE_GS_TEMPLATE, GAS_INDEX_HTML_SNIPPET } from '../data/gasTemplates';
+import { CODE_GS_TEMPLATE, GAS_INDEX_HTML_SNIPPET, GOOGLE_SHEETS_WEBHOOK_SCRIPT } from '../data/gasTemplates';
 
 interface MakingGuideModalProps {
   isOpen: boolean;
@@ -274,32 +274,34 @@ export const MakingGuideModal: React.FC<MakingGuideModalProps> = ({ isOpen, onCl
           {activeTab === 'sheets' && (
             <div className="space-y-4 font-gowun">
               <h3 className="text-lg font-bold font-jua text-stone-900 flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> 학생들의 응답을 엑셀(구글 시트)에 자동 수집하기
+                <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> 각 반마다(1반, 2반...) 자동 탭 분리 누적 원리
               </h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                학생들이 마지막 14번 슬라이드에서 결과를 볼 때, 구글 앱스 스크립트의 <code>google.script.run</code> 명령어를 사용하면 구글 시트에 자동으로 한 행씩 누적 저장됩니다.
+                학생이 제출할 때 선택한 <strong>[반] 정보</strong>를 바탕으로, 구글 앱스 스크립트가 스프레드시트에 해당 반 탭(예: <code>1반</code>, <code>2반</code>)이 있는지 검사하고, 없으면 예쁜 헤더와 함께 <strong>새 시트를 자동으로 생성</strong>하여 저장합니다. 동시에 <strong>[전체통합]</strong> 탭에도 누적되어 전교생 응답을 한눈에 볼 수 있습니다!
               </p>
 
-              <div className="bg-stone-900 text-stone-100 rounded-xl p-4 text-xs font-mono overflow-x-auto space-y-2">
-                <div className="text-stone-400">// index.html의 자바스크립트 함수 내부</div>
-                <div className="text-emerald-400">function sendResultsToSheet() &#123;</div>
-                <div className="pl-4 text-stone-300">var studentData = &#123;</div>
-                <div className="pl-8 text-amber-300">studentName: document.getElementById('studentName').value,</div>
-                <div className="pl-8 text-amber-300">m1_1_traits: selectedTraitsMap[2].join(', '),</div>
-                <div className="pl-8 text-amber-300">m1_1_job: document.getElementById('job2').value,</div>
-                <div className="pl-8 text-amber-300">m2_1: quizResultsMap[7],</div>
-                <div className="pl-8 text-amber-300">body1: bodyAnswers.body1</div>
-                <div className="pl-4 text-stone-300">&#125;;</div>
-                <div className="pl-4 text-cyan-300">
-                  google.script.run.withSuccessHandler(function(res) &#123;<br/>
-                  &nbsp;&nbsp;alert('선생님께 답변이 성공적으로 제출되었습니다!');<br/>
-                  &#125;).saveStudentResponse(studentData);
-                </div>
-                <div className="text-emerald-400">&#125;</div>
+              <div className="bg-amber-50 border-2 border-amber-300 p-3.5 rounded-xl text-xs text-amber-900 space-y-1">
+                <div className="font-bold font-jua text-sm text-amber-950">⚠️ 데이터가 시트에 누적되지 않을 때 체크리스트</div>
+                <div>1. Apps Script에서 <code>testSave</code> 함수를 한 번 <strong>[▷ 실행]</strong>하여 권한 승인을 완료했는가?</div>
+                <div>2. 코드 수정 후 <strong>[배포 관리] → [수정] → [새 버전]</strong>으로 업데이트 배포했는가?</div>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg text-xs text-blue-900">
-                수업 후 구글 시트를 열어보면 반 학생들의 생각, 퀴즈 오답률, 체형 분포도를 엑셀 차트나 피벗 테이블로 바로 분석할 수 있습니다!
+              <div className="border-2 border-stone-800 rounded-xl overflow-hidden bg-white">
+                <div className="bg-stone-800 text-stone-200 px-4 py-2 text-xs font-mono flex items-center justify-between font-bold">
+                  <span>📄 각 반별 자동 분리 스크립트 (Code.gs)</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(GOOGLE_SHEETS_WEBHOOK_SCRIPT);
+                      alert('반별 자동 분리 스크립트가 복사되었습니다!');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 rounded text-xs font-jua transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> 스크립트 전체 복사
+                  </button>
+                </div>
+                <pre className="p-3 text-[11px] font-mono bg-stone-950 text-stone-300 overflow-x-auto max-h-56 leading-relaxed">
+                  {GOOGLE_SHEETS_WEBHOOK_SCRIPT}
+                </pre>
               </div>
             </div>
           )}
@@ -317,9 +319,13 @@ export const MakingGuideModal: React.FC<MakingGuideModalProps> = ({ isOpen, onCl
               {/* Code.gs */}
               <div className="border-2 border-stone-800 rounded-xl overflow-hidden bg-white">
                 <div className="bg-stone-800 text-stone-200 px-4 py-2 text-xs font-mono flex items-center justify-between font-bold">
-                  <span>📄 Code.gs (서버 스크립트)</span>
+                  <span>📄 Code.gs (반별 자동 분리 & Webhook 수신)</span>
                   <button
-                    onClick={handleCopyCodeGs}
+                    onClick={() => {
+                      navigator.clipboard.writeText(GOOGLE_SHEETS_WEBHOOK_SCRIPT);
+                      setCopiedCodeGs(true);
+                      setTimeout(() => setCopiedCodeGs(false), 2000);
+                    }}
                     className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-stone-950 rounded text-xs transition-colors"
                   >
                     {copiedCodeGs ? <Check className="w-3.5 h-3.5 text-stone-900" /> : <Copy className="w-3.5 h-3.5" />}
@@ -327,7 +333,7 @@ export const MakingGuideModal: React.FC<MakingGuideModalProps> = ({ isOpen, onCl
                   </button>
                 </div>
                 <pre className="p-3 text-[11px] font-mono bg-stone-950 text-stone-300 overflow-x-auto max-h-56 leading-relaxed">
-                  {CODE_GS_TEMPLATE}
+                  {GOOGLE_SHEETS_WEBHOOK_SCRIPT}
                 </pre>
               </div>
 
