@@ -1,0 +1,6 @@
+{
+  "name": "패션, 쉽지? - 기술가정 인터랙티브 학습 앱",
+  "description": "학생들이 옷의 이미지, 세계 전통의상(TPO), 나의 체형과 패션 코디법을 직접 체험하며 배우는 기술·가정 인터랙티브 학습 도구 및 제작 가이드입니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
